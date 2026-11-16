@@ -1119,6 +1119,52 @@ function markOneLine(root) {
     if (b.scrollHeight > 0 && b.scrollHeight <= lh * 1.5) b.classList.add('sol-one');
   });
 }
+// ── Aufgabe kopieren / in anderer Stunde einfügen ──
+let CLIP = null;
+try { CLIP = JSON.parse(localStorage.getItem(LS_KEY + '_clip') || 'null'); } catch(e) {}
+function effQ(w, l, s, ci) {
+  const o = DATA.SOL[`${w},${l},${s},${ci},q`];
+  if (o !== undefined) return o;
+  const rp = DATA.RP[rpKey(w, l)];
+  const ref = rp && rp[ci];
+  if (!ref) return '';
+  const qd = DATA.Q[qKey(ref[0], ref[1])];
+  if (!qd || !qd[s]) return '';
+  return qd[s].cards[Math.min(ci, qd[s].cards.length - 1)] || '';
+}
+function copyCard(ci) {
+  const w = ST.week, l = ST.lesson, sets = {};
+  for (const s of [2, 3]) {
+    const k = `${w},${l},${s},${ci}`;
+    sets[s] = {
+      q: effQ(w, l, s, ci),
+      s: DATA.SOL[k + ',s'] || '',
+      img: DATA.IMG[k] ? JSON.parse(JSON.stringify(DATA.IMG[k])) : null
+    };
+  }
+  let lbl = getLessonData().cards[ci].srcLabel || '';
+  if (lbl === '—') lbl = '';
+  CLIP = { from: `Woche ${w}, Std. ${l}, Aufgabe ${ci + 1}`, sets, lbl };
+  let saved = true;
+  try { localStorage.setItem(LS_KEY + '_clip', JSON.stringify(CLIP)); } catch(e) { saved = false; }
+  showToast(`Aufgabe kopiert (${CLIP.from}) – jetzt in einer anderen Stunde „Einfügen“ wählen` + (saved ? '' : ' (nur bis zum Neuladen)'), 4500);
+}
+function pasteCard(ci) {
+  if (!CLIP) { showToast('Zuerst bei einer Aufgabe „Kopieren“ wählen', 3500); return; }
+  const w = ST.week, l = ST.lesson;
+  const has = [2, 3].some(s => effQ(w, l, s, ci).trim() || DATA.SOL[`${w},${l},${s},${ci},s`] || DATA.IMG[`${w},${l},${s},${ci}`]);
+  if (has && !confirm('Die vorhandene Aufgabe an dieser Stelle (Set 1 und Set 2) überschreiben?')) return;
+  for (const s of [2, 3]) {
+    const k = `${w},${l},${s},${ci}`, c = CLIP.sets[s];
+    DATA.SOL[k + ',q'] = c.q;
+    if (c.s) DATA.SOL[k + ',s'] = c.s; else delete DATA.SOL[k + ',s'];
+    if (CLIP.lbl) DATA.SOL[k + ',lbl'] = CLIP.lbl; else delete DATA.SOL[k + ',lbl'];
+    if (c.img) DATA.IMG[k] = JSON.parse(JSON.stringify(c.img)); else delete DATA.IMG[k];
+  }
+  ST.openSols.delete(ci);
+  autoSave(); renderCards();
+  showToast(`Aufgabe eingefügt (aus ${CLIP.from})`, 3500);
+}
 function fitGrid() {
   const g = document.getElementById('grid');
   if (!g) return;
@@ -1181,6 +1227,8 @@ function renderCards() {
           style="margin-left:4px;${altShown ? 'border-color:var(--muted);color:var(--text)' : ''}">
           ${altShown ? '▲ Alt ausblenden' : '▼ Alt anzeigen'}
         </button>
+        <button class="card-set-btn card-cp-btn" data-ci="${i}" data-cp="copy" style="margin-left:auto" title="Komplette Aufgabe (Set 1 + Set 2, Bilder, Thema, Lösung) kopieren">⧉ Kopieren</button>
+        <button class="card-set-btn card-cp-btn" data-ci="${i}" data-cp="paste" title="Kopierte Aufgabe hier einfügen (überschreibt diese Karte)">⎘ Einfügen</button>
       </div>
     </div>`;
   });
@@ -1218,6 +1266,15 @@ function renderCards() {
       card.classList.remove('st-r','st-y','st-g');
       if (v) card.classList.add('st-'+v);
       card.querySelectorAll('.tl-btn').forEach(b => b.classList.toggle('on', b.dataset.c === v));
+    });
+    btn.addEventListener('dblclick', e => e.stopPropagation());
+  });
+
+  grid.querySelectorAll('.card-cp-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const ci = parseInt(btn.dataset.ci);
+      btn.dataset.cp === 'copy' ? copyCard(ci) : pasteCard(ci);
     });
     btn.addEventListener('dblclick', e => e.stopPropagation());
   });
